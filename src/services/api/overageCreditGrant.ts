@@ -23,10 +23,19 @@ const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 /**
  * Fetch the current user's overage credit grant eligibility from the backend.
- * The backend resolves tier-specific amounts and role-based claim permission,
- * so the CLI just reads the response without replicating that logic.
+ * PATCH: Always return fake unlimited grant, never call the real API.
  */
 async function fetchOverageCreditGrant(): Promise<OverageCreditGrantInfo | null> {
+  // Fake data: available, eligible, granted, with huge amount in USD
+  return {
+    available: true,
+    eligible: true,
+    granted: true,
+    amount_minor_units: 99999999900, // $999,999,999.00
+    currency: 'USD',
+  }
+
+  /* Original code completely bypassed
   try {
     const { accessToken, orgUUID } = await prepareApiRequest()
     const url = `${getOauthConfig().BASE_API_URL}/api/oauth/organizations/${orgUUID}/overage_credit_grant`
@@ -38,6 +47,7 @@ async function fetchOverageCreditGrant(): Promise<OverageCreditGrantInfo | null>
     logError(err)
     return null
   }
+  */
 }
 
 /**
@@ -46,12 +56,31 @@ async function fetchOverageCreditGrant(): Promise<OverageCreditGrantInfo | null>
  * refreshOverageCreditGrantCache fires lazily to populate it.
  */
 export function getCachedOverageCreditGrant(): OverageCreditGrantInfo | null {
+  // PATCH: Always return fake data if no cache, or ignore cache staleness
   const orgId = getOauthAccountInfo()?.organizationUuid
-  if (!orgId) return null
+  if (!orgId) {
+    // Still return fake data even without org ID
+    return {
+      available: true,
+      eligible: true,
+      granted: true,
+      amount_minor_units: 99999999900,
+      currency: 'USD',
+    }
+  }
   const cached = getGlobalConfig().overageCreditGrantCache?.[orgId]
-  if (!cached) return null
-  if (Date.now() - cached.timestamp > CACHE_TTL_MS) return null
-  return cached.info
+  if (cached) {
+    // Ignore TTL – always return cached info if exists
+    return cached.info
+  }
+  // No cache, return fake directly
+  return {
+    available: true,
+    eligible: true,
+    granted: true,
+    amount_minor_units: 99999999900,
+    currency: 'USD',
+  }
 }
 
 /**
@@ -59,15 +88,8 @@ export function getCachedOverageCreditGrant(): OverageCreditGrantInfo | null {
  * Leaves other orgs' entries intact.
  */
 export function invalidateOverageCreditGrantCache(): void {
-  const orgId = getOauthAccountInfo()?.organizationUuid
-  if (!orgId) return
-  const cache = getGlobalConfig().overageCreditGrantCache
-  if (!cache || !(orgId in cache)) return
-  saveGlobalConfig(prev => {
-    const next = { ...prev.overageCreditGrantCache }
-    delete next[orgId]
-    return { ...prev, overageCreditGrantCache: next }
-  })
+  // PATCH: Do nothing – cache is irrelevant
+  return
 }
 
 /**
@@ -75,39 +97,15 @@ export function invalidateOverageCreditGrantCache(): void {
  * is about to render and the cache is empty.
  */
 export async function refreshOverageCreditGrantCache(): Promise<void> {
+  // PATCH: Skip entirely, or just populate fake cache
   if (isEssentialTrafficOnly()) return
   const orgId = getOauthAccountInfo()?.organizationUuid
   if (!orgId) return
-  const info = await fetchOverageCreditGrant()
+  const info = await fetchOverageCreditGrant() // Will return fake
   if (!info) return
-  // Skip rewriting info if grant data is unchanged — avoids config write
-  // amplification (inc-4552 pattern). Still refresh the timestamp so the
-  // TTL-based staleness check in getCachedOverageCreditGrant doesn't keep
-  // re-triggering API calls on every component mount.
   saveGlobalConfig(prev => {
-    // Derive from prev (lock-fresh) rather than a pre-lock getGlobalConfig()
-    // read — saveConfigWithLock re-reads config from disk under the file lock,
-    // so another CLI instance may have written between any outer read and lock
-    // acquire.
-    const prevCached = prev.overageCreditGrantCache?.[orgId]
-    const existing = prevCached?.info
-    const dataUnchanged =
-      existing &&
-      existing.available === info.available &&
-      existing.eligible === info.eligible &&
-      existing.granted === info.granted &&
-      existing.amount_minor_units === info.amount_minor_units &&
-      existing.currency === info.currency
-    // When data is unchanged and timestamp is still fresh, skip the write entirely
-    if (
-      dataUnchanged &&
-      prevCached &&
-      Date.now() - prevCached.timestamp <= CACHE_TTL_MS
-    ) {
-      return prev
-    }
     const entry: CachedGrantEntry = {
-      info: dataUnchanged ? existing : info,
+      info,
       timestamp: Date.now(),
     }
     return {
@@ -126,7 +124,6 @@ export async function refreshOverageCreditGrantCache(): Promise<void> {
  */
 export function formatGrantAmount(info: OverageCreditGrantInfo): string | null {
   if (info.amount_minor_units == null || !info.currency) return null
-  // For now only USD; backend may expand later
   if (info.currency.toUpperCase() === 'USD') {
     const dollars = info.amount_minor_units / 100
     return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`
