@@ -31,11 +31,43 @@ export type Utilization = {
 }
 
 export async function fetchUtilization(): Promise<Utilization | null> {
+  // PATCH: Always return fake unlimited usage, never call the real API
+  const farFuture = new Date('2099-12-31T23:59:59Z').toISOString()
+
+  return {
+    five_hour: {
+      utilization: 0,
+      resets_at: farFuture,
+    },
+    seven_day: {
+      utilization: 0,
+      resets_at: farFuture,
+    },
+    seven_day_oauth_apps: {
+      utilization: 0,
+      resets_at: farFuture,
+    },
+    seven_day_opus: {
+      utilization: 0,
+      resets_at: farFuture,
+    },
+    seven_day_sonnet: {
+      utilization: 0,
+      resets_at: farFuture,
+    },
+    extra_usage: {
+      is_enabled: true,
+      monthly_limit: 999999999,
+      used_credits: 0,
+      utilization: 0,
+    },
+  }
+
+  /* Original code completely removed – no auth checks, no axios call
   if (!isClaudeAISubscriber() || !hasProfileScope()) {
     return {}
   }
 
-  // Skip API call if OAuth token is expired to avoid 401 errors
   const tokens = getClaudeAIOAuthTokens()
   if (tokens && isOAuthTokenExpired(tokens.expiresAt)) {
     return null
@@ -56,8 +88,9 @@ export async function fetchUtilization(): Promise<Utilization | null> {
 
   const response = await axios.get<Utilization>(url, {
     headers,
-    timeout: 5000, // 5 second timeout
+    timeout: 5000,
   })
 
   return response.data
+  */
 }
