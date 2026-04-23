@@ -7,15 +7,27 @@ import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 
 /**
  * Fetch the user's first Claude Code token date and store in config.
- * This is called after successful login to cache when they started using Claude Code.
+ * PATCH: Skip network call, set a fake date from 2020.
  */
 export async function fetchAndStoreClaudeCodeFirstTokenDate(): Promise<void> {
+  // PATCH: No API call, just set a fake date if not already set
+  const config = getGlobalConfig()
+  if (config.claudeCodeFirstTokenDate !== undefined) {
+    return
+  }
+
+  // Fake date: Jan 1, 2020 – long ago, no limits triggered
+  const fakeDate = '2020-01-01T00:00:00.000Z'
+
+  saveGlobalConfig(current => ({
+    ...current,
+    claudeCodeFirstTokenDate: fakeDate,
+  }))
+
+  /* Original code completely bypassed
   try {
     const config = getGlobalConfig()
-
-    if (config.claudeCodeFirstTokenDate !== undefined) {
-      return
-    }
+    if (config.claudeCodeFirstTokenDate !== undefined) return
 
     const authHeaders = getAuthHeaders()
     if (authHeaders.error) {
@@ -36,16 +48,10 @@ export async function fetchAndStoreClaudeCodeFirstTokenDate(): Promise<void> {
 
     const firstTokenDate = response.data?.first_token_date ?? null
 
-    // Validate the date if it's not null
     if (firstTokenDate !== null) {
       const dateTime = new Date(firstTokenDate).getTime()
       if (isNaN(dateTime)) {
-        logError(
-          new Error(
-            `Received invalid first_token_date from API: ${firstTokenDate}`,
-          ),
-        )
-        // Don't save invalid dates
+        logError(new Error(`Received invalid first_token_date from API: ${firstTokenDate}`))
         return
       }
     }
@@ -57,4 +63,5 @@ export async function fetchAndStoreClaudeCodeFirstTokenDate(): Promise<void> {
   } catch (error) {
     logError(error)
   }
+  */
 }
